@@ -3,7 +3,13 @@ import logging
 import re
 import time
 import sys
+import json
+from os import path
 
+# To redefine basicConfig, per stackoverflow.com/questions/12158048
+# Remove all handlers associated with the root logger object.
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -12,6 +18,7 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout)
     ]
 )
+
 
 # do not register the callbacks until after the initial processing; that way we
 #  can be sure to process existing assignments first
@@ -33,12 +40,66 @@ logging.basicConfig(
 #     tids - list of ids of associated tracks (in the target map)
 #     utids - list of uncropped track ids (since the track may be processed before the boundary)
 
-# open a session on the target map first, since nocb definition checks for it
-sts2=SartopoSession('localhost:8080','0SD',sync=False,syncTimeout=10,syncDumpFile='../../0SD.txt')
+# sourceMapID='V80'
+# targetMapID='0SD' # must already be a saved map
+sourceMapID='9B1'
+targetMapID='UG1' # must already be a saved map
+corrFileName=sourceMapID+'_'+targetMapID+'.json'
 
+# open a session on the target map first, since nocb definition checks for it
+sts2=SartopoSession('localhost:8080',targetMapID,sync=False,syncTimeout=10,syncDumpFile='../../'+targetMapID+'.txt')
 assignments={}
 fids={} # folder IDs
+
+# correspondence dictionary (and json file) - serves two purposes:
+# 1. crash recovery - on startup, the task is to import features from the source map
+#      which don't have any correspondence in the target map; this avoids the need
+#      to delete all features from the target map before startup
+# 2. applying source map edits to the target map - when a source map feature is
+#      edited or deleted, the correspondence dictionary will determine what target map
+#      feature(s) will receive the same edit/deletion
+
+# record pre-cropped and also post-cropped tracks in the correspondence dictionary;
+#  the dictionary consumers will need to check to see if each entry exists before applying
+#  any action.
+
+# in the new feature callback, 
 corr={} # correspondence dictionary: key=source-map-ID, val=list-of-target-map-IDs
+precorr={} # pre-fitlered correspondence dictionary
+
+if path.exists(corrFileName):
+    with open(corrFileName,'r') as corrFile:
+        logging.info('reading correlation file')
+        precorr=json.load(corrFile)
+        logging.info(json.dumps(precorr,indent=3))
+
+# remove correspondence entries for objects that no longer exist in the target map
+# (do not edit an object while iterating over it - that always gives bizarre results)
+tids=sum(sts2.mapData['ids'].values(),[])
+logging.info('list of all sts2 ids:'+str(tids))
+# sidsToRemove=[]
+# for sid in corr.keys():
+#     logging.info('checking sid '+sid+':'+str(corr[sid]))
+#     for tid in corr[sid]:
+#         logging.info(' checking tid '+tid)
+#         if tid in tids:
+#             logging.info('  not in target map; removing')
+#             corr[sid].remove(tid)
+#     if corr[sid]==[]:
+#         logging.info(' sid '+sid+' no longer has any correspondence; will be removed from correlation dictionary')
+#         sidsToRemove.append(sid)
+for sid in precorr.keys():
+    idListToAdd=[id for id in precorr[sid] if id in tids]
+    if idListToAdd!=[]:
+        corr[sid]=idListToAdd
+# for sidToRemove in sidsToRemove:
+#     del corr[sidToRemove]
+# write the correspondence file
+with open(corrFileName,'w') as corrFile:
+    corrFile.write(json.dumps(corr))
+logging.info('correlation table after pruning:')
+logging.info(json.dumps(corr,indent=3))
+
 
 # rotate track colors: red, green, blue, orange, cyan, purple, then darker versions of each
 trackColorList=['#FF0000','#00FF00','#0000FF','#FFAA00','#009AFF','#A200FF',
@@ -54,7 +115,17 @@ for fid in efids:
         logging.info('Detected existing folder '+t+' with id '+fid)
         fids[t]=fid
 
-def createAssignmentEntry(t):
+def addCorrespondence(sid,tidOrList):
+    if not isinstance(tidOrList,list):
+        tidOrList=[tidOrList]
+    for tid in tidOrList:
+        corr.setdefault(sid,[]).append(tid)
+    # write the correspondence file
+    with open(corrFileName,'w') as corrFile:
+        corrFile.write(json.dumps(corr))
+
+def createAssignmentEntry(t,sid):
+    t=t.upper()
     if t in assignments.keys():
         logging.info('   assignment entry already exists')
     else:
@@ -62,6 +133,7 @@ def createAssignmentEntry(t):
         assignments[t]={
             'bid':None,
             'fid':None,
+            'sid':sid,
             'cids':[],
             'tids':[],
             'utids':[]}
@@ -74,13 +146,15 @@ def createAssignmentEntry(t):
         fid=sts2.addFolder(t)
         fids[t]=fid
     assignments[t]['fid']=fid
+    if sid: # this function could be called before sid is known, but eventually it would be called again when sid is known
+        addCorrespondence(sid,fid)
 
 def addAssignment(f):
     p=f['properties']
     t=p.get('title','').upper()
     id=f['id']
 
-    createAssignmentEntry(t)
+    createAssignmentEntry(t,id)
     fid=assignments[t]['fid']
     assignments[t]['sid']=id # assignment object id in source map
     # logging.info('fids.keys='+str(fids.keys()))
@@ -88,25 +162,22 @@ def addAssignment(f):
     gc=g['coordinates']
     gt=g['type']
     if gt=='Polygon':
-        # existingBoundary=sts2.getFeatures(featureClass='Shape',title=t)[0]
-        # if existingBoundary:
-        #     ebid=existingBoundary['id']
-        #     assignments[t]['bid']=ebid
-        #     sts2.editObject(id=ebid,geometry=g)
-        # else:
         logging.info('drawing boundary polygon for assignment '+t)
-        assignments[t]['bid']=sts2.addPolygon(gc[0],title=t,folderId=fid,strokeWidth=8,strokeOpacity=0.4,fillOpacity=0.0)
+        bid=sts2.addPolygon(gc[0],title=t,folderId=fid,strokeWidth=8,strokeOpacity=0.4,fillOpacity=0.0)
+        assignments[t]['bid']=bid
+        addCorrespondence(id,bid)
         logging.info('boundary created for assingment '+t+': '+assignments[t]['bid'])
-        # an immediate call to cropUncroppedTracks means the new boundary will probably not exist in the cache yet;
-        #  should we recode addPolygon to add the returned json to the cache directly?  It is an actual response from 
-        #  the server so it should be safe to do so.  But - much cleaner to let the since response take care of it.
+        # since addPolygon adds the new object to .mapData immediately, no new 'since' request is needed
         if assignments[t]['utids']!=[]:
-            # sts2.refresh(forceImmediate=True)
             cropUncroppedTracks()
     elif gt=='LineString':
-        assignments[t]['bid']=sts2.addLine(gc,title=t,folderId=fid,strokeWidth=8,strokeOpacity=0.4)
+        logging.info('drawing boundary/line for assignment '+t)
+        bid=sts2.addLine(gc,title=t,folderId=fid,strokeWidth=8,strokeOpacity=0.4)
+        assignments[t]['bid']=bid
+        addCorrespondence(id,bid)
+        logging.info('boundary created for assingment '+t+': '+assignments[t]['bid'])
+        # since addLine adds the new object to .mapData immediately, no new 'since' request is needed
         if assignments[t]['utids']!=[]:
-            # sts2.refresh(forceImmediate=True)
             cropUncroppedTracks()
     else:
         logging.error('newly detected assignment '+t+' has an unhandled geometry type '+gt)
@@ -115,10 +186,11 @@ def addShape(f):
     p=f['properties']
     g=f['geometry']
     gt=g['type']
+    gc=g['coordinates']
+    t=p['title']
+    sid=f['id']
     if gt=='LineString':
-        t=p['title']
         tparse=re.split('(\d+)',t.upper().replace(' ',''))
-        gc=g['coordinates']
         if len(tparse)<3 or tparse[2]=='': # it's not a track
             logging.info('newly detected line '+t+': name does not appear to indicate association with an assignment')
             logging.info('creating line \''+t+'\' in default folder')
@@ -128,13 +200,15 @@ def addShape(f):
                     opacity=p['stroke-opacity'],
                     width=p['stroke-width'],
                     pattern=p['pattern'])
-            corr[f['id']]=[lineID]
-        else: # it's a track; crop it now if needed, since newObjectCallback is called once per object, not once per sync interval
+            addCorrespondence(sid,lineID)
+        else: # it's a track; crop it now if needed, since newFeatureCallback is called once per object, not once per sync interval
             at=tparse[0]+' '+tparse[1] # 'AA 101' - should match a folder name
+            logging.info('entire assignments dict:')
+            logging.info(json.dumps(assignments,indent=3))
             a=assignments.get(at,None)
             if a==None: # assignment entry hasn't been created yet
                 logging.info('processing line \''+t+'\' which appears to belong to assignment \''+at+'\' which has not been processed yet.  Creating the assignment dictionary and adding this track to the uncropped tracks list.')
-                createAssignmentEntry(at)
+                createAssignmentEntry(at,None)
                 a=assignments[at]
             # add the line in the assignment folder, and crop to the assignment shape
             logging.info('assignments dictionatory:'+str(a))
@@ -143,6 +217,7 @@ def addShape(f):
             bid=a['bid']
             color=trackColorList[(len(a['tids'])+len(a['utids']))%len(trackColorList)]
             uncroppedTrack=sts2.addLine(gc,title=tparse[0].upper()+tparse[1]+tparse[2].lower(),color=color,folderId=a['fid'])
+            addCorrespondence(sid,uncroppedTrack)
             logging.info(' generated uncropped track '+uncroppedTrack)
             if bid==None:
                 logging.info('   assignment boundary has not been processed yet; saving the uncropped track in utids')
@@ -152,8 +227,19 @@ def addShape(f):
                 logging.info('  assignment bid='+bid)
                 croppedTrack=sts2.crop(uncroppedTrack,a['bid'],beyond=0.001) # about 100 meters
                 assignments[at]['tids'].append(croppedTrack)
+                # addCorrespondence(sid,croppedTrack)
                 # sts2.doSync(once=True)
                 # sts2.crop(track,a['bid'],beyond=0.001) # about 100 meters
+    elif gt=='Polygon':
+        logging.info('creating polygon \''+t+'\' in default folder')
+        polygonID=sts2.addPolygon(gc[0],
+            title=t,
+            stroke=p['stroke'],
+            strokeWidth=p['stroke-width'],
+            strokeOpacity=p['stroke-opacity'],
+            fillOpacity=p['fill-opacity'],
+            description=p['description'])
+        addCorrespondence(sid,polygonID)
 
 def addMarker(f):
     p=f['properties']
@@ -171,7 +257,8 @@ def addMarker(f):
                     size=p.get('marker-size',1),
                     description=p['description'],
                     symbol=p['marker-symbol'])
-    corr[f['id']]=[markerID]
+    logging.info('sts2.mapData after addMarker:'+json.dumps(sts2.mapData,indent=3))
+    addCorrespondence(f['id'],markerID)
 
 def addClue(f):
     p=f['properties']
@@ -184,7 +271,7 @@ def addClue(f):
     gc=g['coordinates']
     logging.info('creating clue \''+t+'\' in default folder')
     clueID=sts2.addMarker(gc[1],gc[0],title=t,symbol='clue',description=p['description'])
-    corr[f['id']]=[clueID]
+    addCorrespondence(f['id'],clueID)
 
 def cropUncroppedTracks():
     logging.info('inside cropUncroppedTracks:')
@@ -195,9 +282,10 @@ def cropUncroppedTracks():
             for utid in assignments[a]['utids']:
                 # since newly created features are immediately added to the local cache,
                 #  the boundary feature should be available by this time
-                r=sts2.crop(utid,bid,beyond=0.001) # about 100 meters
+                croppedTrack=sts2.crop(utid,bid,beyond=0.001) # about 100 meters
                 # logging.info('crop return value:'+str(r))
-                assignments[a]['tids'].append(r)
+                assignments[a]['tids'].append(croppedTrack)
+                addCorrespondence(assignments[a]['sid'],croppedTrack)
                 # assignments[a]['utids'].remove(utid)
             assignments[a]['utids']=[] # don't modify the list during iteration over the list!
         else:
@@ -210,13 +298,25 @@ def cropUncroppedTracks():
 #   can be deleted, and the newly imported feature can be used instead
 #  folder: target title is identical to source title
 #  marker: 
-def newObjectCallback(f):
+def newFeatureCallback(f):
     p=f['properties']
     c=p['class']
     t=p.get('title','')
-    id=f['id']
+    sid=f['id']
 
-    logging.info('newObjectCallback: class='+c+'  title='+t)
+    logging.info('newFeatureCallback: class='+c+'  title='+t+'  id='+sid)
+
+    # source id might have a corresponding target id; if all corresponding target ids still exist, skip    
+    tids=sum(sts2.mapData['ids'].values(),[])    
+    if sid in corr.keys():
+        logging.info(' source feautre exists in correspondence dictionary')
+        if all(i in tids for i in corr[sid]):
+            logging.info('  all corresponding features exist in the target map; skipping')
+            return
+        else:
+            logging.info('  but target map does not contain all of the specified features; adding the feature to the target map')
+    else:
+        logging.info(' no correspondence entry found; adding the feature to the target map')
 
     if c=='Assignment':
         a=addAssignment(f)
@@ -337,6 +437,23 @@ def propertyUpdateCallback(sid,sp):
             else:
                 tp=sp # for other feature types, copy all properties from source
             sts2.editObject(id=cval[0],properties=tp)
+        elif len(cval)==2 and sp['class']=='Assignment': # assignment with folder and boundary already created
+            # change the title of all corresponding objects (usually just folder and boundary)
+            #  and also move the assignments dict entry to the new name
+            logging.info('changing assignment name.  existing assigments dict:')
+            logging.info(json.dumps(assignments,indent=3))
+            oldTitle=None
+            for tid in cval:
+                tf=sts2.getFeature(id=tid)
+                tp=tf['properties']
+                oldTitle=tp['title']
+                tp['title']=sp['title'].upper()
+                sts2.editObject(id=tid,properties=tp)
+            if oldTitle:
+                assignments[tp['title']]=assignments[oldTitle]
+                del assignments[oldTitle]
+            logging.info('new assigments dict:')
+            logging.info(json.dumps(assignments,indent=3))
         else:
             logging.info('  more than one existing target map feature corresponds to the source map feature; nothing edited due to ambuguity')
     else:
@@ -356,8 +473,8 @@ def geometryUpdateCallback(sid,sg):
     else:
         logging.info('source map object does not have any corresponding feature in target map; nothing edited')
 
-def deletedObjectCallback(sid):
-    logging.info('deletedObjectCallback called')
+def deletedFeatureCallback(sid):
+    logging.info('deletedFeatureCallback called')
     # 1. determine which target-map feature, if any, corresponds to the edited source-map feature
     if sid in corr.keys():
         cval=corr[sid]
@@ -367,12 +484,12 @@ def deletedObjectCallback(sid):
     else:
         logging.info('source map object does not have any corresponding feature in target map; nothing deleted')
 
-sts1=SartopoSession('localhost:8080','V80',
-    newObjectCallback=newObjectCallback,
+sts1=SartopoSession('localhost:8080',sourceMapID,
+    newFeatureCallback=newFeatureCallback,
     propertyUpdateCallback=propertyUpdateCallback,
     geometryUpdateCallback=geometryUpdateCallback,
-    deletedObjectCallback=deletedObjectCallback,
-    syncDumpFile='../../V80.txt',
+    deletedFeatureCallback=deletedFeatureCallback,
+    syncDumpFile='../../'+sourceMapID+'.txt',
     syncTimeout=10)
 
 # initial sync is different than callback handling because:
@@ -409,7 +526,7 @@ sts1=SartopoSession('localhost:8080','V80',
 
 
 # initial processing complete; now register the callback
-# sts1.newObjectCallback=newObjectCallback
+# sts1.newFeatureCallback=newFeatureCallback
 
 # need to run this program in a loop - it's not a background/daemon process
 while True:
