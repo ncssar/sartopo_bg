@@ -19,7 +19,6 @@ logging.basicConfig(
     ]
 )
 
-
 # do not register the callbacks until after the initial processing; that way we
 #  can be sure to process existing assignments first
 
@@ -164,12 +163,31 @@ for a in assignments_init:
     # assignments[a]['utids']=[x for x in assignments_init[a]['utids'] if x in tids]
     # if assignments[a]['tids']==[] and assignments[a]['cids']==[] and assignments[a]['utids']==[] and 'bid' not in assignments[a].keys() and 'fid' not in assignments[a].keys()
 # finally, prune any empty assignments; don't edit while iterating
+assignmentsToDelete=[]
+for at in assignments:
+    a=assignments[at]
+    if not a['bid'] and not a['fid'] and not a['tids'] and not a['cids'] and not a['utids']:
+        assignmentsToDelete.append(at)
+for atd in assignmentsToDelete:
+    logging.info(' deleting empty assignment dict entry "'+atd+'"')
+    del assignments[atd]
 writeAssignmentsFile()
 logging.info('assignments dict after pruning:'+json.dumps(assignments,indent=3))
 
 # rotate track colors: red, green, blue, orange, cyan, purple, then darker versions of each
-trackColorList=['#FF0000','#00FF00','#0000FF','#FFAA00','#009AFF','#A200FF',
-        '#C00000','#009B00','#0000C0','#BC7D00','#0084DC','#8600D4']
+trackColorDict={
+    'a':'#FF0000',
+    'b':'#00CD00',
+    'c':'#0000FF',
+    'd':'#FFAA00',
+    'e':'#009AFF',
+    'f':'#A200FF',
+    'g':'#C00000',
+    'h':'#006900',
+    'i':'#0000C0',
+    'j':'#BC7D00',
+    'k':'#0084DC',
+    'l':'#8600D4'} # default specified in .get function
 
 efids=sts2.mapData['ids']['Folder'] # existing (target map) folder IDs
 logging.info('Existing folder ids:'+str(efids))
@@ -189,7 +207,7 @@ def addCorrespondence(sid,tidOrList):
         corr.setdefault(sid,[]).append(tid)
     # write the correspondence file
     with open(corrFileName,'w') as corrFile:
-        corrFile.write(json.dumps(corr))
+        corrFile.write(json.dumps(corr,indent=3))
 
 def createAssignmentEntry(t,sid):
     t=t.upper()
@@ -259,8 +277,9 @@ def addShape(f):
     t=p['title']
     sid=f['id']
     if gt=='LineString':
-        tparse=re.split('(\d+)',t.upper().replace(' ',''))
-        if len(tparse)<3 or tparse[2]=='': # it's not a track
+        tparse=parseTrackName(t)
+        # if len(tparse)<3 or tparse[2]=='': # it's not a track
+        if not tparse:
             logging.info('newly detected line '+t+': name does not appear to indicate association with an assignment')
             logging.info('creating line \''+t+'\' in default folder')
             lineID=sts2.addLine(gc,title=t,
@@ -280,23 +299,23 @@ def addShape(f):
                 createAssignmentEntry(at,None)
                 a=assignments[at]
             # add the line in the assignment folder, and crop to the assignment shape
-            logging.info('assignments dictionatory:'+str(a))
             logging.info('creating line \''+t+'\' in folder \''+at+'\'')
             logging.info('  assignment fid='+a['fid'])
             bid=a['bid']
-            color=trackColorList[(len(a['tids'])+len(a['utids']))%len(trackColorList)]
+            # color=trackColorList[(len(a['tids'])+len(a['utids']))%len(trackColorList)]
+            color=trackColorDict.get(tparse[2].lower(),'#444444')
             uncroppedTrack=sts2.addLine(gc,title=tparse[0].upper()+tparse[1]+tparse[2].lower(),color=color,folderId=a['fid'])
-            addCorrespondence(sid,uncroppedTrack)
             logging.info(' generated uncropped track '+uncroppedTrack)
             if bid==None:
                 logging.info('   assignment boundary has not been processed yet; saving the uncropped track in utids')
                 assignments[at]['utids'].append(uncroppedTrack)
+                addCorrespondence(sid,uncroppedTrack)
                 # logging.info('  utids:'+str(assignments[at]['utids']))
             else:
                 logging.info('  assignment bid='+bid)
-                croppedTrack=sts2.crop(uncroppedTrack,a['bid'],beyond=0.001) # about 100 meters
-                assignments[at]['tids'].append(croppedTrack)
-                # addCorrespondence(sid,croppedTrack)
+                croppedTrackList=sts2.crop(uncroppedTrack,a['bid'],beyond=0.001) # about 100 meters
+                assignments[at]['tids'].append(croppedTrackList)
+                addCorrespondence(sid,croppedTrackList)
                 # sts2.doSync(once=True)
                 # sts2.crop(track,a['bid'],beyond=0.001) # about 100 meters
             writeAssignmentsFile()
@@ -352,10 +371,23 @@ def cropUncroppedTracks():
             for utid in assignments[a]['utids']:
                 # since newly created features are immediately added to the local cache,
                 #  the boundary feature should be available by this time
-                croppedTrack=sts2.crop(utid,bid,beyond=0.001) # about 100 meters
-                # logging.info('crop return value:'+str(r))
-                assignments[a]['tids'].append(croppedTrack)
-                addCorrespondence(assignments[a]['sid'],croppedTrack)
+                croppedTrackLines=sts2.crop(utid,bid,beyond=0.001) # about 100 meters
+                logging.info('crop return value:'+str(croppedTrackLines))
+                assignments[a]['tids'].append(croppedTrackLines)
+                # cropped track line(s) should correspond to the source map line, 
+                #  not the source map assignment; source map line id will be
+                #  the corr key whose val is the utid; also remove the utid
+                #  from that corr val list
+                # logging.info('    corr items:'+str(corr.items()))
+                slidList=[list(i)[0] for i in corr.items() if list(i)[1]==[utid]]
+                if len(slidList)==1:
+                    slid=slidList[0]
+                    logging.info('    corresponding source line id:'+str(slid))
+                    corr[slid]=[]
+                    addCorrespondence(slid,croppedTrackLines)
+                else:
+                    logging.error('    corresponding source map line id could not be determined')
+                    logging.error('    corresponding source line id list:'+str(slidList))
                 # assignments[a]['utids'].remove(utid)
             assignments[a]['utids']=[] # don't modify the list during iteration over the list!
             writeAssignmentsFile()
@@ -438,15 +470,15 @@ def newFeatureCallback(f):
 
     if c=='Shape':
         addShape(f)
-        g=f['geometry']
-        gc=g['coordinates']
-        gt=g['type']
+        # g=f['geometry']
+        # gc=g['coordinates']
+        # gt=g['type']
 # #         # if gt=='Polygon':
 # #         #     sts2.addPolygon(gc[0],title=t,folderId=fid)
-        if gt=='LineString':
-            tparse=re.split('(\d+)',t.upper().replace(' ',''))
-            if len(tparse)==3 and tparse[2]=='':
-                logging.info()
+        # if gt=='LineString':
+        #     tparse=re.split('(\d+)',t.upper().replace(' ',''))
+        #     if len(tparse)==3 and tparse[2]=='':
+        #         logging.info()
 #                 logging.error('new line '+t+' detected, but name does not appear to indicate a track')
 #                 return False
 #             at=tparse[0]+' '+tparse[1] # 'AA 101' - should match a folder name
@@ -491,8 +523,10 @@ def newFeatureCallback(f):
         #         # sts2.editObject(id=id,properties={'folderId':folder['id']})
 
 
-def propertyUpdateCallback(sid,sp):
-    logging.info('propertyUpdateCallback called')
+def propertyUpdateCallback(f):
+    sid=f['id']
+    sp=f['properties']
+    logging.info('propertyUpdateCallback called for '+sp['class']+':'+sp['title'])
     # 1. determine which target-map feature, if any, corresponds to the edited source-map feature
     if sid in corr.keys():
         cval=corr[sid]
@@ -536,24 +570,65 @@ def propertyUpdateCallback(sid,sp):
     else:
         logging.info('  source map object does not have any corresponding feature in target map; nothing edited')
 
-def geometryUpdateCallback(sid,sg):
-    logging.info('geometryUpdateCallback called')
-    # 1. determine which target-map feature, if any, corresponds to the edited source-map feature
+# parseTrackName: return False if not a track, or [assignment,team,suffix] if a track
+def parseTrackName(t):
+    tparse=re.split('(\d+)',t.upper().replace(' ',''))
+    if len(tparse)==3:
+        return tparse
+    else:
+        return False
+
+def geometryUpdateCallback(f):
+    sid=f['id']
+    sp=f['properties']
+    sg=f['geometry']
+    # if the edited source object is a track (a linestring with appropriate name format),
+    #  delete all corresponding target map features (the crop operation could have resulted in
+    #  multiple lines) then re-import the feature from scratch, which will also re-crop it;
+    # otherwise, edit the geometry of all corresponding features that have a geometry entry
+    #  (i.e. when an assigment boundary is edited, the assignment folder has no geometry)
+    logging.info('geometryUpdateCallback called for '+sp['class']+':'+sp['title'])
     if sid in corr.keys():
-        cval=corr[sid]
-        logging.info('cval:'+str(cval))
-        if len(cval)==1: # exactly one corresponding feature exists
-            logging.info('exactly one target map feature corresponds to the source map feature; updating the target map feature geometry')
-            sts2.editObject(id=cval[0],geometry=sg)
-            # if it was a track, re-crop it
-            if sg['type']=='LineString':
-                for a in assignments:
-                    logging.info('  checking assignment: tids='+str(a['tids']))
-                    if cval[0] in a['tids']:
-                        logging.info('  the updated geometry is a track belonging to '+a['title']+': will re-crop using the new geometry')
-                        sts2.crop(cval[0],a['bid'],beyond=0.001)
+        tparse=parseTrackName(sp['title'])
+        if sg['type']=='LineString' and sp['class']=='Shape' and tparse:
+            logging.info('  edited object '+sp['title']+' appears to be a track; correspoding previous imported and cropped tracks will be deleted, and the new track will be re-imported (and re-cropped)')
+            corrList=corr[sid]
+            for ttid in corr[sid]:
+                sts2.delObject('Shape',ttid)
+            # also delete from the assignments dict and correspondence dict, so that it will be added anew
+            at=tparse[0]+' '+tparse[1]
+            # don't modify list while iterating!
+            newTidList=[]
+            for tidList in assignments[at]['tids']:
+                if not all(elem in tidList for elem in corrList):
+                    newTidList.append(tidList)
+            assignments[at]['tids']=newTidList
+            del corr[sid]
+            newFeatureCallback(f) # this will crop the track automatically
         else:
-            logging.info('more than one existing target map feature corresponds to the source map feature; nothing edited due to ambuguity')
+            for tid in corr[sid]:
+                if 'geometry' in sts2.getFeature(id=tid).keys():
+                    logging.info('  corresponding target map feature '+tid+' has geometry; setting it equal to the edited source feature geometry')
+                    sts2.editObject(id=tid,geometry=sg)
+                else:
+                    logging.info('  corresponding target map feature '+tid+' has no geometry; no edit performed')
+
+    # # 1. determine which target-map feature, if any, corresponds to the edited source-map feature
+    # if sid in corr.keys():
+    #     cval=corr[sid]
+    #     logging.info('cval:'+str(cval))
+    #     if len(cval)==1: # exactly one corresponding feature exists
+    #         logging.info('exactly one target map feature corresponds to the source map feature; updating the target map feature geometry')
+    #         sts2.editObject(id=cval[0],geometry=sg)
+    #         # if it was a track, delete all corresponding target map features, then re-import (which will re-crop it)
+    #         if sg['type']=='LineString':
+    #             for a in assignments:
+    #                 logging.info('  checking assignment: tids='+str(assignments[a]['tids']))
+    #                 if cval[0] in assignments[a]['tids']:
+    #                     logging.info('  the updated geometry is a track belonging to '+assignments[a]['title']+': will re-crop using the new geometry')
+    #                     sts2.crop(cval[0],assignments[a]['bid'],beyond=0.001)
+    #     else:
+    #         logging.info('more than one existing target map feature corresponds to the source map feature; nothing edited due to ambuguity')
     else:
         logging.info('source map object does not have any corresponding feature in target map; nothing edited')
 
