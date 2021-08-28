@@ -23,18 +23,18 @@ logging.basicConfig(
 #  can be sure to process existing assignments first
 
 # assignments - dictionary of dictionaries of assignment data; each assignment sub-dictionary
-#   is created upon processing of the first object that appears to be related to the assigment,
-#   based on title ('AA101' for assignment objects, or 'AA101a' for lines, possibly including space(s))
+#   is created upon processing of the first feature that appears to be related to the assigment,
+#   based on title ('AA101' for assignment features, or 'AA101a' for lines, possibly including space(s))
 # NOTE - we really want to be able to recreate the ID associations at runtime (what target map
-#   object corresponds to what source map object) rather than relying on a correspondence file,
-#   but that would require a place for metadata on the target map objects.  Maybe the target map
+#   feature corresponds to what source map feature) rather than relying on a correspondence file,
+#   but that would require a place for metadata on the target map features.  Maybe the target map
 #   details / description field could be used for this?  Any new field added here just gets deleted
 #   by sartopo.  How important is it to keep this ID correspondence?  IS title sufficient?
 #  key = assignment title (name and number; i.e. we want one dict entry per pairing/'outing')
 #  val = dictionary
-#     bid - id of boundary object (in the target map)
-#     fid - id of folder object (in the target map)
-#     sid - id of the assignment object (in the SOURCE map)
+#     bid - id of boundary feature (in the target map)
+#     fid - id of folder feature (in the target map)
+#     sid - id of the assignment feature (in the SOURCE map)
 #     cids - list of ids of associated clues (in the target map)
 #     tids - list of ids of associated tracks (in the target map)
 #     utids - list of uncropped track ids (since the track may be processed before the boundary)
@@ -60,6 +60,7 @@ except:
 
 assignments={} # assignments dictionary
 assignments_init={} # pre-filtered assignments dictionary (read from file on startup)
+assignmentSuffixDict={} # index numbers for duplicate-named assignments
 
 fids={} # folder IDs
 
@@ -84,7 +85,7 @@ if path.exists(corrFileName):
         corr_init=json.load(corrFile)
         logging.info(json.dumps(corr_init,indent=3))
 
-# remove correspondence entries for objects that no longer exist in the target map
+# remove correspondence entries for features that no longer exist in the target map
 # (do not edit an object while iterating over it - that always gives bizarre results)
 tids=sum(sts2.mapData['ids'].values(),[])
 logging.info('list of all sts2 ids:'+str(tids))
@@ -199,7 +200,6 @@ for fid in efids:
         logging.info('Detected existing folder '+t+' with id '+fid)
         fids[t]=fid
 
-
 def addCorrespondence(sid,tidOrList):
     if not isinstance(tidOrList,list):
         tidOrList=[tidOrList]
@@ -209,19 +209,20 @@ def addCorrespondence(sid,tidOrList):
     with open(corrFileName,'w') as corrFile:
         corrFile.write(json.dumps(corr,indent=3))
 
+def getAssignmentSuffixIndex(t):
+    n=assignmentSuffixDict.get(t,2)
+    assignmentSuffixDict[t]=n+1
+    return n
+
 def createAssignmentEntry(t,sid):
-    t=t.upper()
-    if t in assignments.keys():
-        logging.info('   assignment entry already exists')
-    else:
-        logging.info('creating assignment entry for assignment '+t)
-        assignments[t]={
-            'bid':None,
-            'fid':None,
-            'sid':sid,
-            'cids':[],
-            'tids':[],
-            'utids':[]}
+    logging.info('creating assignment entry for assignment '+t)
+    assignments[t]={
+        'bid':None,
+        'fid':None,
+        'sid':sid,
+        'cids':[],
+        'tids':[],
+        'utids':[]}
     # create the assignment folder if needed
     if t in fids.keys():
         logging.info('   assignment folder already exists')
@@ -239,9 +240,18 @@ def addAssignment(f):
     t=p.get('title','').upper()
     id=f['id']
 
+    # if t is currently blank, set it to 'NOTITLE' for clarity;
+    # dict key must be unique; if an entry by the same name already exists,
+    #  append an incrementing suffix
+    if t=='':
+        t='NOTITLE'
+    if t in assignments.keys():
+        t=t+':'+str(getAssignmentSuffixIndex(t))
+        logging.info('   assignment entry with the same name already exists; setting this assignment title to '+t)
+
     createAssignmentEntry(t,id)
     fid=assignments[t]['fid']
-    assignments[t]['sid']=id # assignment object id in source map
+    assignments[t]['sid']=id # assignment feature id in source map
     # logging.info('fids.keys='+str(fids.keys()))
     g=f['geometry']
     gc=g['coordinates']
@@ -252,17 +262,17 @@ def addAssignment(f):
         assignments[t]['bid']=bid
         addCorrespondence(id,bid)
         logging.info('boundary created for assingment '+t+': '+assignments[t]['bid'])
-        # since addPolygon adds the new object to .mapData immediately, no new 'since' request is needed
+        # since addPolygon adds the new feature to .mapData immediately, no new 'since' request is needed
         if assignments[t]['utids']!=[]:
             cropUncroppedTracks()
         writeAssignmentsFile()
     elif gt=='LineString':
         logging.info('drawing boundary/line for assignment '+t)
-        bid=sts2.addLine(gc,title=t,folderId=fid,strokeWidth=8,strokeOpacity=0.4)
+        bid=sts2.addLine(gc,title=t,folderId=fid,width=8,opacity=0.4)
         assignments[t]['bid']=bid
         addCorrespondence(id,bid)
         logging.info('boundary created for assingment '+t+': '+assignments[t]['bid'])
-        # since addLine adds the new object to .mapData immediately, no new 'since' request is needed
+        # since addLine adds the new feature to .mapData immediately, no new 'since' request is needed
         if assignments[t]['utids']!=[]:
             cropUncroppedTracks()
         writeAssignmentsFile()
@@ -289,7 +299,7 @@ def addShape(f):
                     width=p['stroke-width'],
                     pattern=p['pattern'])
             addCorrespondence(sid,lineID)
-        else: # it's a track; crop it now if needed, since newFeatureCallback is called once per object, not once per sync interval
+        else: # it's a track; crop it now if needed, since newFeatureCallback is called once per feature, not once per sync interval
             at=tparse[0]+' '+tparse[1] # 'AA 101' - should match a folder name
             logging.info('entire assignments dict:')
             logging.info(json.dumps(assignments,indent=3))
@@ -461,7 +471,7 @@ def newFeatureCallback(f):
 #     # 1. if line:
 #     #   a. if title indicates it's a track:
 #     #     i. create a new line with same geometry in the assignment folder
-#     #     - creaete the assignment folder if it doesn't already exist; the assignment object
+#     #     - creaete the assignment folder if it doesn't already exist; the assignment feature
 #     #        may not have been processed yet
 #     #   b. otherwise:
 #     #     i. create a new line with same geometry in the default folder
@@ -502,7 +512,7 @@ def newFeatureCallback(f):
 #             logging.info(' generated track '+track)
 
 #         else:
-#             logging.error('new object '+t+' has an unhandled geometry type '+gt)
+#             logging.error('new feature '+t+' has an unhandled geometry type '+gt)
 #             return False
 
         # new marker:
@@ -522,18 +532,46 @@ def newFeatureCallback(f):
         #         sts2.addLine(f['geometry']['coordinates'],title=t,folderId=folder['id'],timeout=10)
         #         # sts2.editObject(id=id,properties={'folderId':folder['id']})
 
-
+# handle these cases:
+#  1 - name change from a non-track to a track ('CURRRENT TRACK' --> 'AA101a')
+#  2 - name change from a track to a non-track ('AA101a' --> 'junk')
+#  3 - name change from a track to a track in a different assignment/pairing ('AA101a' --> 'AA102a')
+#  4 - name change from a track to a track with different suffix only ('AA101a' --> 'AA101b')
+# in each of these cases it's easier to delete the old feature(s) and re-import the new feature;
+# basically, if it's a Shape/LineString, delete and re-import; additional logic could make this
+#  more specific and less destructive, but there's probably no need
 def propertyUpdateCallback(f):
     sid=f['id']
     sp=f['properties']
-    logging.info('propertyUpdateCallback called for '+sp['class']+':'+sp['title'])
-    # 1. determine which target-map feature, if any, corresponds to the edited source-map feature
+    sg=f['geometry']
+    sc=sp['class']
+    st=sp['title']
+    sgt=sg['type']
+    logging.info('propertyUpdateCallback called for '+sc+':'+st)
+    # determine which target-map feature, if any, corresponds to the edited source-map feature
     if sid in corr.keys():
-        cval=corr[sid]
-        logging.info('  cval:'+str(cval))
-        if len(cval)==1: # exactly one correlating feature exists
+        corrList=corr[sid]
+        if sc=='Shape' and sgt=='LineString':
+            for ttid in corrList:
+                sts2.delObject('Shape',ttid)
+            # also delete from the assignments dict and correspondence dict, so that it will be added anew;
+            # we can't be sure here what assignment if any the line was previously a part of,
+            #  so scan all assignments for id(s)
+            # tparse=parseTrackName(st)
+            # if tparse:
+            for at in assignments:
+                # at=tparse[0]+' '+tparse[1]
+                # don't modify list while iterating!
+                newTidList=[]
+                for tidList in assignments[at]['tids']:
+                    if not all(elem in tidList for elem in corrList):
+                        newTidList.append(tidList)
+                assignments[at]['tids']=newTidList
+            del corr[sid]
+            newFeatureCallback(f) # this will crop the track automatically
+        elif len(corrList)==1: # exactly one correlating feature exists
             logging.info('  exactly one target map feature corresponds to the source map feature; updating the target map feature properties')
-            tf=sts2.getFeature(id=cval[0])
+            tf=sts2.getFeature(id=corrList[0])
             tp=tf['properties']
             # map properties from source to target, based on source class; start with the existing target
             #  map feature properties, and only copy the appropriate properties from the source feature
@@ -546,29 +584,32 @@ def propertyUpdateCallback(f):
                 tp['title']=sp['title']
             else:
                 tp=sp # for other feature types, copy all properties from source
-            sts2.editObject(id=cval[0],properties=tp)
-        elif len(cval)==2 and sp['class']=='Assignment': # assignment with folder and boundary already created
-            # change the title of all corresponding objects (usually just folder and boundary)
+            sts2.editObject(id=corrList[0],properties=tp)
+        elif len(corrList)==2 and sp['class']=='Assignment': # assignment with folder and boundary already created
+            # change the title of all corresponding features (usually just folder and boundary)
             #  and also move the assignments dict entry to the new name
+            #  and update the fids dict
             logging.info('changing assignment name.  existing assigments dict:')
             logging.info(json.dumps(assignments,indent=3))
             oldTitle=None
-            for tid in cval:
+            for tid in corrList:
                 tf=sts2.getFeature(id=tid)
                 tp=tf['properties']
                 oldTitle=tp['title']
                 tp['title']=sp['title'].upper()
                 sts2.editObject(id=tid,properties=tp)
-            if oldTitle:
+            if oldTitle is not None:
                 assignments[tp['title']]=assignments[oldTitle]
+                fids[tp['title']]=fids[oldTitle]
                 del assignments[oldTitle]
+                del fids[oldTitle]
             logging.info('new assigments dict:')
             logging.info(json.dumps(assignments,indent=3))
             writeAssignmentsFile()
         else:
             logging.info('  more than one existing target map feature corresponds to the source map feature; nothing edited due to ambuguity')
     else:
-        logging.info('  source map object does not have any corresponding feature in target map; nothing edited')
+        logging.info('  source map feature does not have any corresponding feature in target map; nothing edited')
 
 # parseTrackName: return False if not a track, or [assignment,team,suffix] if a track
 def parseTrackName(t):
@@ -582,7 +623,7 @@ def geometryUpdateCallback(f):
     sid=f['id']
     sp=f['properties']
     sg=f['geometry']
-    # if the edited source object is a track (a linestring with appropriate name format),
+    # if the edited source feature is a track (a linestring with appropriate name format),
     #  delete all corresponding target map features (the crop operation could have resulted in
     #  multiple lines) then re-import the feature from scratch, which will also re-crop it;
     # otherwise, edit the geometry of all corresponding features that have a geometry entry
@@ -591,7 +632,7 @@ def geometryUpdateCallback(f):
     if sid in corr.keys():
         tparse=parseTrackName(sp['title'])
         if sg['type']=='LineString' and sp['class']=='Shape' and tparse:
-            logging.info('  edited object '+sp['title']+' appears to be a track; correspoding previous imported and cropped tracks will be deleted, and the new track will be re-imported (and re-cropped)')
+            logging.info('  edited feature '+sp['title']+' appears to be a track; correspoding previous imported and cropped tracks will be deleted, and the new track will be re-imported (and re-cropped)')
             corrList=corr[sid]
             for ttid in corr[sid]:
                 sts2.delObject('Shape',ttid)
@@ -630,9 +671,10 @@ def geometryUpdateCallback(f):
     #     else:
     #         logging.info('more than one existing target map feature corresponds to the source map feature; nothing edited due to ambuguity')
     else:
-        logging.info('source map object does not have any corresponding feature in target map; nothing edited')
+        logging.info('source map feature does not have any corresponding feature in target map; nothing edited')
 
-def deletedFeatureCallback(sid):
+def deletedFeatureCallback(f):
+    sid=f['id']
     logging.info('deletedFeatureCallback called')
     # 1. determine which target-map feature, if any, corresponds to the edited source-map feature
     if sid in corr.keys():
@@ -641,7 +683,7 @@ def deletedFeatureCallback(sid):
             logging.info('deleting corresponding target map feature '+tid)
             sts2.delObject(f['properties']['class'],existingId=tid)
     else:
-        logging.info('source map object does not have any corresponding feature in target map; nothing deleted')
+        logging.info('source map feature does not have any corresponding feature in target map; nothing deleted')
 
 try:
     sts1=SartopoSession('localhost:8080',sourceMapID,
