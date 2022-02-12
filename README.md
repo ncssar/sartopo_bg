@@ -11,6 +11,8 @@ In our experience, only these features should be included on the print map:
 
 1. team assignment boundary
 2. relevant portions of tracks of all team members
+    - for roaming teams, such as trailing dogs or trackers, crop the tracks to some reasoably large distance (10km or so) from their starting assignment shape
+    - for all other teams, crop the tracks to a bit beyond their assignment boundary
 3. clues located by the team
 4. clues located by other teams
 5. other relevant map markers and lines that are not specific to the assignment (IC / CP, gates, trails, etc.)
@@ -36,11 +38,11 @@ For now, SARTopo still supports the concept of ownership:
 
 Printing an 'Assignment Map' from Assignment Bulk Ops will generate a PDF that includes the assignment boundary and everything owned by it.  
 
-So, if data imported from searcher GPSes is converted to 'Tracks' and 'Clues' as appropriate, or is imported 'to the assignment' such that they are Tracks and Clues from the start, then printing an Assignment Map can get close to the goal, with these compromises:
+So, if data imported from searcher GPSes is converted to 'Tracks' and 'Clues' as appropriate, or is imported 'to the assignment' such that they are Tracks and Clues from the start, then printing an Assignment Map, can get close to the goal - but their are significant hurdles and drawbacks:
 - making sure that all imported lines and markers are Tracks and Clues owned by the proper assigment can be very labor-intensive and error-prone
 - 'cleaning up' the Tracks, by cutting and deleting, is labor-intensive and error-prone; but, since the bulk-ops-generated Assignment Map extents are determined by the largest extents of owned features, skipping the cleanup step means that the benefits of Assignment Map automatic zooming and positioning are lost.  If a searcher's tracks include a straight line from home, that will be part of the generated Assignment Map unless cleanup is done first
-- features that are not owned by the assignment, such as IC / CP, gates, trails, etc, are not shown on the generated Assignment Map
 - the assignment boundary will be drawn with a fixed amount of opacity, obscuring the map baselayer beneath it, and generally making annotations during debrief less clear
+- features that are not owned by the assignment, such as IC / CP, gates, trails, etc, are not shown on the generated Assignment Map
 
 A common alternative to printing Assignment Maps from Bulk Ops is to just print an area of the incident map, maybe spending a few seconds first to uncheck some categories of features that should not be shown on the printed map.  In some cases, this gets fairly close to the goal, but care is still needed in map preparation.
 
