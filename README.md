@@ -25,11 +25,31 @@ Different SAR teams may find that different styles of debrief maps work better f
 
 Generating good quality team debrief maps has always been elusive and labor intensive, to the point where it usually just doesn't happen, or, a cluttered or incomplete compromise map is used instead.  This compromises the quality of the team debrief process, while creating a lot of delay, and a lot of heartburn in the command post.  Hopefully, this tool can alleviate or even eliminate those problems.
 
-Normally, with this tool running in the background for the duration of the incident, the only necessary user intervention is to click the 'generate PDF' button after all the tracks and clues for an assignment have been imported. 
+Normally, with this tool running in the background for the duration of the incident, the only necessary user intervention is to click the 'generate PDF' button after all the tracks and clues for an assignment have been imported.
+
+image::doc/dmg01.png
+
+Sample incident map
+
+image::doc/dmg02.png
+
+Automatically generated debrief map - you might never need to view this map
+
+image::doc/dmg03.png
+
+Generated debrief map
+
+image::doc/dmg04.png
+
+Generated debrief map
+
+image::doc/dmg05.png
+
+Debrief Map Generator user interface
 
 ## Other ways to build debrief maps
 
-For now, SARTopo still supports the concept of ownership:
+For now, SARTopo still supports the concept of ownership.  This concept will be eliminated at some point in the future.
 - Operational Periods own Assignments
 - Assignments own Tracks, Clues, and Waypoints
   - A Track is a Line that is owned by an Assignment
