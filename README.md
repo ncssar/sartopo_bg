@@ -27,25 +27,26 @@ Generating good quality team debrief maps has always been elusive and labor inte
 
 Normally, with this tool running in the background for the duration of the incident, the only necessary user intervention is to click the 'generate PDF' button after all the tracks and clues for an assignment have been imported.
 
-image::doc/dmg01.png
+Sample incident map:
 
-Sample incident map
+![alt](doc/dmg01.png)
 
-image::doc/dmg02.png
+Automatically generated SARTopo or CalTopo Desktop debrief map - you might never need to view this map:
 
-Automatically generated debrief map - you might never need to view this map
+![alt](doc/dmg02.png)
 
-image::doc/dmg03.png
+Generated debrief PDF:
 
-Generated debrief map
+![alt](doc/dmg03.png)
 
-image::doc/dmg04.png
+Generated debrief PDF:
 
-Generated debrief map
+![alt](doc/dmg04.png)
 
-image::doc/dmg05.png
+Debrief Map Generator user interface:
 
-Debrief Map Generator user interface
+![alt](doc/dmg05.png)
+
 
 ## Other ways to build debrief maps
 
