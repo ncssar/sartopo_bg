@@ -25,13 +25,13 @@ Different SAR teams may find that different styles of debrief maps work better f
 
 Generating good quality team debrief maps has always been elusive and labor intensive, to the point where it usually just doesn't happen, or, a cluttered or incomplete compromise map is used instead.  This compromises the quality of the team debrief process, while creating a lot of delay, and a lot of heartburn in the command post.  Hopefully, this tool can alleviate or even eliminate those problems.
 
-Normally, with this tool running in the background for the duration of the incident, the only necessary user intervention is to click the 'generate PDF' button after all the tracks and clues for an assignment have been imported.
+This tool runs in the background for the duration of the incident, updating a separate SARTopo or CalTopo Desktop map (the 'Debrief Map') as your team works on the incident map.  Normally, the only necessary user intervention is to click the 'generate PDF' button after all the tracks and clues for an assignment have been imported.
 
 Sample incident map:
 
 ![alt](doc/dmg01.png)
 
-Automatically generated SARTopo or CalTopo Desktop debrief map - you might never need to view this map:
+Corresponding debrief map.  You might never need to view this map, but, since it is organized with each 'outing' in its own folder, you can use this map to more easily build custom debrief maps of multiple outings:
 
 ![alt](doc/dmg02.png)
 
