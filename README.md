@@ -10,7 +10,7 @@ This tool generates high quality individual team debrief maps, with minimal need
 In our experience, only these features should be included on the print map:
 
 1. assignment boundary
-2. relevant portions of tracks of the current team's members
+2. relevant portions of tracks of the current team's members (including unfinished AppTracks)
     - for roaming teams, such as trailing dogs or trackers, crop the tracks to some reasoably large distance (10km or so) from their starting assignment shape
     - for all other teams, crop the tracks to a bit beyond their assignment boundary
 3. clues located by the team
@@ -28,7 +28,7 @@ To minimize clutter and maximize the effectveness of the team debrief, the map s
 
 Different SAR teams may find that different styles of debrief maps work better for their purposes.  Please send your feedback and ideas!
 
-Generating good quality team debrief maps has always been elusive and labor intensive, to the point where it usually just doesn't happen, or, a cluttered or incomplete compromise map is used instead.  This compromises the quality of the team debrief process, while creating a lot of delay, and a lot of heartburn in the command post.  Hopefully, this tool can alleviate or even eliminate those problems.
+Generating good quality team debrief maps has always been elusive and labor intensive, to the point where it often just doesn't happen, or, a cluttered or incomplete 'compromise map' is used for team debrief instead.  This compromises the quality of the team debrief process, while creating a lot of delay, and a lot of heartburn in the command post.  Hopefully, this tool can alleviate or even eliminate those problems.
 
 Debrief Map Generator (DMG) runs in the background for the duration of the incident, updating a separate SARTopo or CalTopo Desktop map (the 'Debrief Map') as your team works on the main incident map.  Normally, there is no need to view the Debrief Map, and the only necessary user intervention is to click the 'Generate PDF' button in DMG after all the tracks and clues for an assignment have been imported.
 
@@ -67,19 +67,19 @@ For example: Team 101 may be assigned to AA.  After 101 returns, team 105 may th
 ## Other ways to build debrief maps
 
 ### Using the 'ownership' concept
-For now, SARTopo still supports the concept of ownership.  This concept will most likely be eliminated at some point in the future.  (DMG does not make use of the ownership concept.)
+For now, SARTopo still supports the concept of ownership.  This concept will most likely be eliminated at some point in the future.  (DMG does not rely on the ownership concept.)
 
 - Operational Periods own Assignments
 - Assignments own Tracks, Clues, and Waypoints
   - A Track is a Line that is owned by an Assignment
   - a Clue is a Marker that is owned by an Assignment
-  - a Waypoint is a Marker that is owned by an Assignment but which has no clue-relevant data
+  - a Waypoint is a Marker that is owned by an Assignment but which has no clue-specific data
 
 Printing an 'Assignment Map' from Assignment Bulk Ops will generate a PDF that includes the assignment boundary and everything owned by it.  
 
 So, if data imported from searcher GPSes is converted to 'Tracks' and 'Clues' as appropriate, or is imported 'to the assignment' such that they are Tracks and Clues from the start, then printing an Assignment Map can get close to the goal - but there are significant hurdles and drawbacks:
 - making sure that all imported lines and markers are Tracks and Clues owned by the proper assigment can be very labor-intensive and error-prone
-- 'cleaning up' the Tracks, by cutting and deleting, is labor-intensive and error-prone; but, since the bulk-ops-generated Assignment Map extents are determined by the largest extents of owned features, skipping the cleanup step means that the benefits of Assignment Map automatic zooming and positioning are lost.  If a searcher's tracks include a straight line from home, that will be part of the generated Assignment Map unless cleanup is done first.
+- 'cleaning up' the Tracks, by cutting and deleting, is labor-intensive and error-prone; but, since the bulk-ops-generated Assignment Map extents are determined by the largest extents of owned features, skipping the cleanup step means that the benefits of Assignment Map automatic zooming and positioning are lost.  If a searcher's tracks include a straight line from home, that will be part of the generated Assignment Map - which will automatically be zoomed out to include the entire track -  unless cleanup is done first.
 - the assignment boundary will be drawn with a fixed amount of opacity, obscuring the map baselayer beneath it, and generally making annotations during debrief less clear
 - features that are not owned by the assignment, such as IC / CP, gates, trails, etc, are not shown on the generated Assignment Map
 
