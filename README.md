@@ -53,14 +53,17 @@ Debrief Map Generator user interface:
 ![alt](doc/dmg05.png)
 
 ### What's an 'outing'?
+
 DMG uses the term 'outing' to refer to the pairing of a given assignment shape with a given team.  There are a few important distinctions between the terms 'Assignment' and 'Outing':
 - Assignment
-  - might not have any team assigned to it
-  - might be renamed on the incident map when reassigned to a different team
+  - might not have any number / any team assigned to it
+  - might be renumbered on the incident map when reassigned to a different team
 - Outing
-  - must remain as a part of the record even if the assignment is reassigned to a different team
+  - must remain as a part of the record even if the assignment is unassigned or reassigned to a different team
 
 An Outing is created when a team is assigned to an Assignment.
+
+![alt](doc/outing_timeline.png)
 
 For example: Team 101 may be assigned to AA.  After 101 returns, team 105 may then be assigned to AA.  Regardless of whether a new assignment 'AA 105' is created on the incident map, or if the existing assignment 'AA 101' is renamed to 'AA 105', the two outings 'AA 101' and 'AA 105' are both part of the record and may both have their own sets of tracks.  Searcher tracks for 'AA 101' may not get imported until after 'AA 105' has started.  The 'outings' concept accounts for these possibilities.
 
